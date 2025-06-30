@@ -1,88 +1,75 @@
-import type { VercelRequest, VercelResponse } from "@vercel/node";
-import express from "express";
-import cors from "cors";
-import { storage } from "../server/supabase-storage.js";
+import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-const app = express();
+const supabaseUrl = process.env.SUPABASE_URL!;
+const supabaseKey = process.env.SUPABASE_ANON_KEY!;
 
-app.use(express.json({ limit: "10mb" }));
-app.use(express.urlencoded({ extended: true }));
-app.use(cors());
-
-app.get("/api/products", async (req, res) => {
-  try {
-    const products = await storage.getProducts();
-    res.json(products);
-  } catch (error) {
-    console.error("Error fetching products:", error);
-    res.status(500).json({ error: "Failed to fetch products" });
-  }
-});
-
-app.get("/api/content", async (req, res) => {
-  try {
-    const content = await storage.getContent();
-    res.json(content);
-  } catch (error) {
-    console.error("Error fetching content:", error);
-    res.status(500).json({ error: "Failed to fetch content" });
-  }
-});
-
-app.post("/api/contact", async (req, res) => {
-  try {
-    const message = await storage.createContactMessage(req.body);
-    res.json(message);
-  } catch (error) {
-    console.error("Error creating contact message:", error);
-    res.status(500).json({ error: "Failed to create contact message" });
-  }
-});
-
-app.post("/api/admin/login", async (req, res) => {
-  const { email, password } = req.body;
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // Enable CORS
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   
-  if (email === "wesleykoech2022@gmail.com" || email === "chepkoechjoan55@gmail.com") {
-    if (password === "admin123") {
-      res.json({ success: true, user: { email, role: "admin" } });
-    } else {
-      res.status(401).json({ error: "Invalid credentials" });
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
+  const { createClient } = await import('@supabase/supabase-js');
+  const supabase = createClient(supabaseUrl, supabaseKey);
+
+  try {
+    const { url } = req;
+    const method = req.method;
+
+    if (url === '/api/products' && method === 'GET') {
+      const { data, error } = await supabase.from('products').select('*');
+      if (error) throw error;
+      return res.json(data || []);
     }
-  } else {
-    res.status(401).json({ error: "Unauthorized" });
-  }
-});
 
-app.post("/api/products", async (req, res) => {
-  try {
-    const product = await storage.createProduct(req.body);
-    res.json(product);
+    if (url === '/api/content' && method === 'GET') {
+      const { data, error } = await supabase.from('content').select('*');
+      if (error) throw error;
+      return res.json(data || []);
+    }
+
+    if (url === '/api/contact' && method === 'POST') {
+      const { data, error } = await supabase.from('contact_messages').insert(req.body).select().single();
+      if (error) throw error;
+      return res.json(data);
+    }
+
+    if (url === '/api/admin/login' && method === 'POST') {
+      const { email, password } = req.body;
+      if ((email === 'wesleykoech2022@gmail.com' || email === 'chepkoechjoan55@gmail.com') && password === 'admin123') {
+        return res.json({ success: true, user: { email, role: 'admin' } });
+      }
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    if (url === '/api/products' && method === 'POST') {
+      const { data, error } = await supabase.from('products').insert(req.body).select().single();
+      if (error) throw error;
+      return res.json(data);
+    }
+
+    if (url?.startsWith('/api/products/') && method === 'PUT') {
+      const id = url.split('/').pop();
+      const { data, error } = await supabase.from('products').update(req.body).eq('id', id).select().single();
+      if (error) throw error;
+      return res.json(data);
+    }
+
+    if (url?.startsWith('/api/products/') && method === 'DELETE') {
+      const id = url.split('/').pop();
+      const { error } = await supabase.from('products').delete().eq('id', id);
+      if (error) throw error;
+      return res.json({ success: true });
+    }
+
+    return res.status(404).json({ error: 'Endpoint not found' });
+
   } catch (error) {
-    console.error("Error creating product:", error);
-    res.status(500).json({ error: "Failed to create product" });
+    console.error('API Error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
   }
-});
-
-app.put("/api/products/:id", async (req, res) => {
-  try {
-    const product = await storage.updateProduct(req.params.id, req.body);
-    res.json(product);
-  } catch (error) {
-    console.error("Error updating product:", error);
-    res.status(500).json({ error: "Failed to update product" });
-  }
-});
-
-app.delete("/api/products/:id", async (req, res) => {
-  try {
-    await storage.deleteProduct(req.params.id);
-    res.json({ success: true });
-  } catch (error) {
-    console.error("Error deleting product:", error);
-    res.status(500).json({ error: "Failed to delete product" });
-  }
-});
-
-export default function handler(req: VercelRequest, res: VercelResponse) {
-  return app(req, res);
 }
